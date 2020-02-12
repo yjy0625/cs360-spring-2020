@@ -60,62 +60,25 @@ protected:
 
 class DfsSolver : public Solver {
 public:
-    DfsSolver(Problem* problem) : Solver(problem) {}
-
-    int solve() {
-        State initState;
-        return helper(initState, 0);
-    }
-
-private:
-    int helper(State state, int optSoFar) {
-        #ifdef DEBUG
-        cout << problem->getStateString(state) << endl;
-        #endif
-
-        if(state.size() == problem->getD()) {
-            return problem->getNumPackagesCollected(state);
-        }
-
-        int currentUpperBound = problem->getNumPackagesCollected(state) 
-            + problem->getNumEligiblePackages(state);
-
-        // check if we will never reach optimal state from here
-        if(currentUpperBound <= optSoFar) {
-            return 0;
-        }
-
-        vector<Action> eligibleActions = problem->actions(state);
-
-        sort(eligibleActions.begin(), eligibleActions.end(), 
-            [this](Action a1, Action a2) {
-                return problem->getXY(a1) > problem->getXY(a2);
-            });
-
-        for(Action action : eligibleActions) {
-            State nextState = problem->step(state, action);
-            optSoFar = max(optSoFar, helper(nextState, optSoFar));
-            if(optSoFar == currentUpperBound) break;
-        }
-
-        return optSoFar;
-    }
-};
-
-class FasterDFSSolver : public Solver {
-public:
-    FasterDFSSolver(Problem* problem) : Solver(problem), numPlaced(0), 
+    DfsSolver(Problem* problem) : Solver(problem), numPlaced(0), 
                 numPackagesCollected(0), numExpansions(0) {
         n = problem -> getN();
         d = problem -> getD();
         packages = vector< vector<int> >(n, vector<int>(n, 0));
-        covered = vector< vector<int> >(n, vector<int>(n, -1));
+        rowHistory.push_back(0);
+        colHistory.push_back(0);
+        diag1History.push_back(0);
+        diag2History.push_back(0);
         placed = vector< vector<bool> >(n, vector<bool>(n, false));
         for(int i = 0; i < n; i++) {
             for(int j = 0; j < n; j++) {
                 packages[i][j] = problem -> getXY(make_pair(i,j));
+                if(packages[i][j] > 0) {
+                    packagesList.push_back(make_pair(i,j));
+                }
             }
         }
+        optSoFar = 0;
     }
     
     int solve() {
@@ -131,21 +94,26 @@ public:
 
         int opt = 0;
 
-        // int currentUpperBound = numPackagesCollected + getOverestimation();
-
-        // if(currentUpperBound <= opt) {
-        //     return 0;
-        // }
+        int upperBound = numPackagesCollected + getOverestimation();
+        if(upperBound <= optSoFar) {
+            return 0;
+        }
 
         int startingRow = (history.empty()) ? 0 : (history[history.size() - 1].first + 1);
         int endRow = n - (d - numPlaced);
         for(int i = startingRow; i <= endRow; i++) {
             for(int j = 0; j < n; j++) {
-                if(covered[i][j] == -1) {
+                if(!getCovered(i,j)) {
                     // stepping
                     step(make_pair(i,j));
                     opt = max(opt, solve());
                     unstep(make_pair(i,j));
+                    if(opt > optSoFar) {
+                        optSoFar = opt;
+                    }
+                    if(opt == upperBound) {
+                        return opt;
+                    }
                 }
             }
         }
@@ -159,37 +127,37 @@ public:
 
 private:
     vector< vector<int> > packages;
-    vector< vector<int> > covered;
+    vector<int> rowHistory;
+    vector<int> colHistory;
+    vector<int> diag1History;
+    vector<int> diag2History;
     vector< vector<bool> > placed;
     vector< Action > history;
+    vector< Coord > packagesList;
     int n;
     int d;
     int numPlaced;
     int numPackagesCollected;
     int numExpansions;
+    int optSoFar;
 
     void step(Action action) {
-        // update cover matrix
-        for(int j = 0; j < n; j++) {
-            if(covered[action.first][j] == -1)
-                covered[action.first][j] = numPlaced;
-        }
-        for(int i = 0; i < n; i++) {
-            if(covered[i][action.second] == -1)
-                covered[i][action.second] = numPlaced;
-        }
-        for(int i = 0; i < n; i++) {
-            int j = action.first + action.second - i;
-            if(j >= 0 && j < n) {
-                if(covered[i][j] == -1)
-                    covered[i][j] = numPlaced;
-            }
-            j = i - action.first + action.second;
-            if(j >= 0 && j < n) {
-                if(covered[i][j] == -1)
-                    covered[i][j] = numPlaced;
-            }
-        }
+        // create new cover ints
+        int rowCoverage = rowHistory[rowHistory.size() - 1];
+        rowCoverage |= 1 << action.first;
+        rowHistory.push_back(rowCoverage);
+
+        int colCoverage = colHistory[colHistory.size() - 1];
+        colCoverage |= 1 << action.second;
+        colHistory.push_back(colCoverage);
+
+        int diag1Coverage = diag1History[diag1History.size() - 1];
+        diag1Coverage |= 1 << (action.first - action.second + n - 1);
+        diag1History.push_back(diag1Coverage);
+
+        int diag2Coverage = diag2History[diag2History.size() - 1];
+        diag2Coverage |= 1 << (action.first + action.second);
+        diag2History.push_back(diag2Coverage);
         
         // update drone matrix
         placed[action.first][action.second] = true;
@@ -205,13 +173,10 @@ private:
     }
 
     void unstep(Action action) {
-        for(int i = 0; i < n; i++) {
-            for(int j = 0; j < n; j++) {
-                if(covered[i][j] == numPlaced - 1) {
-                    covered[i][j] = -1;
-                }
-            }
-        }
+        rowHistory.pop_back();
+        colHistory.pop_back();
+        diag1History.pop_back();
+        diag2History.pop_back();
 
         placed[action.first][action.second] = false;
 
@@ -222,32 +187,23 @@ private:
         numPackagesCollected -= packages[action.first][action.second];
     }
 
-    int getOverestimation() {
-        priority_queue<int> pq;
-        for(int i = 0; i < n; i++) {
-            int maxPackageCount = 0;
-            bool dronePlaced = false;
-            for(int j = 0; j < n; j++) {
-                int coordPackageCount = packages[i][j];
-                if(covered[i][j] == -1
-                    && (coordPackageCount > maxPackageCount)) {
-                    maxPackageCount = coordPackageCount;
-                }
-                if(placed[i][j]) {
-                    dronePlaced = true;
-                    break;
-                }
-            }
-            if(!dronePlaced) {
-                pq.push(maxPackageCount);
-            }
-        }
+    bool getCovered(int i, int j) {
+        bool covered = false;
+        covered |= (rowHistory[rowHistory.size() - 1] >> i) & 1;
+        covered |= (colHistory[colHistory.size() - 1] >> j) & 1;
+        covered |= (diag1History[diag1History.size() - 1] >> (i - j + n - 1)) & 1;
+        covered |= (diag2History[diag2History.size() - 1] >> (i + j)) & 1;
+        return covered;
+    }
 
+    int getOverestimation() { // O(num of packages)
         int res = 0;
-        int numDronesLeft = d - history.size();
-        for(int i = 0; i < numDronesLeft; i++) {
-            res += pq.top();
-            pq.pop();
+        for(Coord coord : packagesList) {
+            int i = coord.first;
+            int j = coord.second;
+            if(!getCovered(i, j)) {
+                res += packages[i][j];
+            }
         }
         return res;
     }
@@ -373,7 +329,7 @@ public:
 
     int solve() {
         if(algorithm == "dfs") {
-            return FasterDFSSolver(this).solve();
+            return DfsSolver(this).solve();
         }
         else if(algorithm == "astar") {
             return AstarSolver(this).solve();
