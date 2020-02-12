@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -7,6 +8,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
 
 using namespace std;
 
@@ -319,20 +321,47 @@ public:
                 it->second++;
             }
         }
+
+        // for(int i = 0; i < n; i++) {
+        //     for(int j = 0; j < n; j++) {
+        //         actionPriority.push_back(make_pair(i,j));
+        //     }
+        // }
+
+        // sort(
+        //     actionPriority.begin(), actionPriority.end(), 
+        //     [this](const Action& a1, const Action& a2) -> bool { 
+        //         return getXY(a1) > getXY(a2);
+        //     }
+        // );
     }
 
     vector<Action> actions(State state) {
         vector<Action> eligibleActions;
         int startingRow = (state.empty()) ? 0 : (state[state.size() - 1].first + 1);
         int endRow = n - (d - state.size());
+        vector< vector<bool> > covered = getCovered(state);
         for(int i = startingRow; i <= endRow; i++) {
             for(int j = 0; j < n; j++) {
                 Action action = make_pair(i, j);
-                if(!checkCovered(state, action)) {
+                if(!covered[action.first][action.second]) {
                     eligibleActions.push_back(action);
                 }
             }
         }
+
+        // auto it = actionPriority.begin();
+        // if(!state.empty()) {
+        //     it = next(find(actionPriority.begin(), actionPriority.end(),
+        //                  state[state.size() - 1]));
+        // }
+        // for(; it != actionPriority.end(); it = next(it)) {
+        //     Action action = *it;
+        //     if(!checkCovered(state, action)) {
+        //         eligibleActions.push_back(action);
+        //     }
+        // }
+        
         return eligibleActions;
     }
 
@@ -362,10 +391,11 @@ public:
     }
 
     int getNumEligiblePackages(State state) {
-        int eRow = getNumEligiblePackages(state, "row");
-        int eCol = getNumEligiblePackages(state, "col");
-        int eDiag1 = getNumEligiblePackages(state, "diag1");
-        int eDiag2 = getNumEligiblePackages(state, "diag2");
+        vector< vector<bool> > covered = getCovered(state);
+        int eRow = getNumEligiblePackages(state, covered, "row");
+        int eCol = getNumEligiblePackages(state, covered, "col");
+        int eDiag1 = getNumEligiblePackages(state, covered, "diag1");
+        int eDiag2 = getNumEligiblePackages(state, covered, "diag2");
         return min(min(eRow, eCol), min(eDiag1, eDiag2));
     }
 
@@ -399,8 +429,36 @@ public:
 private:
     int n; // board size
     int d; // number of drones
+    // vector<Action> actionPriority;
     unordered_map<Coord, int, CoordHash> packages; // list of coordinates
     string algorithm;
+
+    vector< vector<bool> > getCovered(State state) {
+        /* n^2 runtime */
+        vector< vector<bool> > covered = vector< vector<bool> >(n, vector<bool>(n, false));
+        for(Coord coord : state) {
+            int x = coord.first;
+            int y = coord.second;
+
+            for(int j = 0; j < n; j++) {
+                covered[x][j] = true;
+            }
+            for(int i = 0; i < n; i++) {
+                covered[i][y] = true;
+            }
+            for(int i = 0; i < n; i++) {
+                int j = x + y - i;
+                if(j >= 0 && j < n) {
+                    covered[i][j] = true;
+                }
+                j = i - x + y;
+                if(j >= 0 && j < n) {
+                    covered[i][j] = true;
+                }
+            }
+        }
+        return covered;
+    }
 
     /* Check whether a position in the board is covered by a drone. */
     bool checkCovered(State state, Coord coord) {
@@ -425,7 +483,7 @@ private:
         return false;
     }
 
-    int getNumEligiblePackages(State state, string variation) {
+    int getNumEligiblePackages(State state, vector<vector<bool>> covered, string variation) {
         priority_queue<int> pq;
 
         if(variation == "row") {
@@ -435,7 +493,7 @@ private:
                 for(int j = 0; j < n; j++) {
                     Coord coord = make_pair(i, j);
                     int coordPackageCount = getXY(coord);
-                    if((!checkCovered(state, coord)) 
+                    if((!covered[i][j]) 
                         && (coordPackageCount > maxPackageCount)) {
                         maxPackageCount = coordPackageCount;
                     }
@@ -456,7 +514,7 @@ private:
                 for(int i = 0; i < n; i++) {
                     Coord coord = make_pair(i, j);
                     int coordPackageCount = getXY(coord);
-                    if((!checkCovered(state, coord)) 
+                    if((!covered[i][j]) 
                         && (coordPackageCount > maxPackageCount)) {
                         maxPackageCount = coordPackageCount;
                     }
@@ -480,7 +538,7 @@ private:
                     int j = i - dist;
                     Coord coord = make_pair(i, j);
                     int coordPackageCount = getXY(coord);
-                    if((!checkCovered(state, coord)) 
+                    if((!covered[i][j]) 
                         && (coordPackageCount > maxPackageCount)) {
                         maxPackageCount = coordPackageCount;
                     }
@@ -504,7 +562,7 @@ private:
                     int j = sum - i;
                     Coord coord = make_pair(i, j);
                     int coordPackageCount = getXY(coord);
-                    if((!checkCovered(state, coord)) 
+                    if((!covered[i][j]) 
                         && (coordPackageCount > maxPackageCount)) {
                         maxPackageCount = coordPackageCount;
                     }
@@ -562,28 +620,36 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+    ifstream fin("input.txt");
+
     int n, d, p;
-    cin >> n >> d >> p;
+    fin >> n >> d >> p;
 
     // read past endline
     string line;
-    getline(cin, line);
+    getline(fin, line);
 
     string algorithm;
-    getline(cin, algorithm);
+    getline(fin, algorithm);
 
     vector<Coord> coords;
     for(int i = 0; i < p; i++) {
-        getline(cin, line);
+        getline(fin, line);
         int delimPosition = line.find(',');
         int x = stoi(line.substr(0, delimPosition));
         int y = stoi(line.substr(delimPosition + 1));
         coords.push_back(make_pair(x, y));
     }
 
+    fin.close();
+
     DroneProblem problem(n, d, coords, algorithm);
 
-    cout << problem.solve() << endl;
+    ofstream fout("output.txt");
+
+    fout << problem.solve() << endl;
+
+    fout.close();
 
     return 0;
 }
