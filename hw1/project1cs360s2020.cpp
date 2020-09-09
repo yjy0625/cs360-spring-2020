@@ -277,19 +277,6 @@ public:
                 it->second++;
             }
         }
-
-        // for(int i = 0; i < n; i++) {
-        //     for(int j = 0; j < n; j++) {
-        //         actionPriority.push_back(make_pair(i,j));
-        //     }
-        // }
-
-        // sort(
-        //     actionPriority.begin(), actionPriority.end(), 
-        //     [this](const Action& a1, const Action& a2) -> bool { 
-        //         return getXY(a1) > getXY(a2);
-        //     }
-        // );
     }
 
     vector<Action> actions(State state) {
@@ -305,18 +292,6 @@ public:
                 }
             }
         }
-
-        // auto it = actionPriority.begin();
-        // if(!state.empty()) {
-        //     it = next(find(actionPriority.begin(), actionPriority.end(),
-        //                  state[state.size() - 1]));
-        // }
-        // for(; it != actionPriority.end(); it = next(it)) {
-        //     Action action = *it;
-        //     if(!checkCovered(state, action)) {
-        //         eligibleActions.push_back(action);
-        //     }
-        // }
         
         return eligibleActions;
     }
